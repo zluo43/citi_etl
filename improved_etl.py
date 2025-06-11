@@ -163,7 +163,7 @@ def process_csv_to_duckdb(csv_file_path, db_connection):
 
     try:
         # Sample query to determine schema
-        sample_query = f"SELECT * FROM read_csv_auto('{csv_file_path}', header=true, sample_size=100, ignore_errors=true)"
+        sample_query = f"SELECT * FROM read_csv_auto('{csv_file_path}', header=true, sample_size=100, ignore_errors=true) LIMIT 1"
         sample_df = db_connection.execute(sample_query).fetchdf()
     except Exception as e:
         print(f"Error reading sample from {filename}: {str(e)}. Skipping file.")
@@ -248,109 +248,42 @@ def process_csv_to_duckdb(csv_file_path, db_connection):
         birth_year_col = 'birth year' if 'birth year' in sample_df.columns else 'Birth Year'
         gender_col = 'gender' if 'gender' in sample_df.columns else 'Gender'
         
-        # Using your original approach to check for string date format
-        if start_time_col == 'starttime' and sample_df[start_time_col].dtype != '<M8[us]':  # string format: 11/1/2014 00:01:48 #problem only exists in old schema if not mistaken
-            if table_exists:
-                # Append to existing table
-                insert_query = f"""
-                INSERT INTO "{final_table_name}"
-                SELECT
-                    CASE
-                        WHEN "{start_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{start_time_col}", '%m/%d/%Y %H:%M:%S')
-                        WHEN "{start_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{start_time_col}", '%m/%d/%Y %H:%M')
-                        ELSE NULL
-                    END AS starttime,
-                    CASE
-                        WHEN "{stop_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{stop_time_col}", '%m/%d/%Y %H:%M:%S')
-                        WHEN "{stop_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{stop_time_col}", '%m/%d/%Y %H:%M')
-                        ELSE NULL
-                    END AS stoptime,
-                    "{start_station_id_col}"::VARCHAR AS start_station_id,
-                    "{start_station_name_col}" AS start_station_name,
-                    "{start_station_lat_col}"::DOUBLE AS start_station_latitude,
-                    "{start_station_lng_col}"::DOUBLE AS start_station_longitude,
-                    "{end_station_id_col}"::VARCHAR AS end_station_id,
-                    "{end_station_name_col}" AS end_station_name,
-                    "{end_station_lat_col}"::DOUBLE AS end_station_latitude,
-                    "{end_station_lng_col}"::DOUBLE AS end_station_longitude,
-                    "{bikeid_col}"::BIGINT AS bikeid,
-                    "{usertype_col}" AS usertype,
-                    CASE WHEN "{birth_year_col}" IS NOT NULL THEN LEFT(CAST("{birth_year_col}" as VARCHAR),4) ELSE NULL END AS birth_year,
-                    "{gender_col}"::BIGINT AS gender
-                FROM read_csv('{csv_file_path}', header=true, types={{'start station id': 'VARCHAR', 'end station id':'VARCHAR','starttime':'VARCHAR','stoptime':'VARCHAR'}})
-                """
-            else:
-                # Create new table - original logic
-                insert_query = f"""
-                CREATE TABLE "{final_table_name}" AS
-                SELECT
-                    CASE
-                        WHEN "{start_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{start_time_col}", '%m/%d/%Y %H:%M:%S')
-                        WHEN "{start_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{start_time_col}", '%m/%d/%Y %H:%M')
-                        ELSE NULL
-                    END AS starttime,
-                    CASE
-                        WHEN "{stop_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{stop_time_col}", '%m/%d/%Y %H:%M:%S')
-                        WHEN "{stop_time_col}" ~ '^\\d{{1,2}}/\\d{{1,2}}/\\d{{4}} \\d{{1,2}}:\\d{{1,2}}$' THEN strptime("{stop_time_col}", '%m/%d/%Y %H:%M')
-                        ELSE NULL
-                    END AS stoptime,
-                    "{start_station_id_col}"::VARCHAR AS start_station_id,
-                    "{start_station_name_col}" AS start_station_name,
-                    "{start_station_lat_col}"::DOUBLE AS start_station_latitude,
-                    "{start_station_lng_col}"::DOUBLE AS start_station_longitude,
-                    "{end_station_id_col}"::VARCHAR AS end_station_id,
-                    "{end_station_name_col}" AS end_station_name,
-                    "{end_station_lat_col}"::DOUBLE AS end_station_latitude,
-                    "{end_station_lng_col}"::DOUBLE AS end_station_longitude,
-                    "{bikeid_col}"::BIGINT AS bikeid,
-                    "{usertype_col}" AS usertype,
-                    CASE WHEN "{birth_year_col}" IS NOT NULL THEN LEFT(CAST("{birth_year_col}" as VARCHAR),4) ELSE NULL END AS birth_year,
-                    "{gender_col}"::BIGINT AS gender
-                FROM read_csv('{csv_file_path}', header=true, types={{'start station id': 'VARCHAR', 'end station id':'VARCHAR','starttime':'VARCHAR','stoptime':'VARCHAR'}})
-                """
-        else:  # cases when all starttime col is timestamp
-            if table_exists:
-                # Append to existing table
-                insert_query = f"""
-                INSERT INTO "{final_table_name}"
-                SELECT
-                    "{start_time_col}"::TIMESTAMP AS starttime,
-                    "{stop_time_col}"::TIMESTAMP AS stoptime,
-                    "{start_station_id_col}"::VARCHAR AS start_station_id,
-                    "{start_station_name_col}" AS start_station_name,
-                    "{start_station_lat_col}"::DOUBLE AS start_station_latitude,
-                    "{start_station_lng_col}"::DOUBLE AS start_station_longitude,
-                    "{end_station_id_col}"::VARCHAR AS end_station_id,
-                    "{end_station_name_col}" AS end_station_name,
-                    NULLIF("{end_station_lat_col}", 'NULL')::DOUBLE AS end_station_latitude,
-                    NULLIF("{end_station_lng_col}", 'NULL')::DOUBLE AS end_station_longitude,
-                    "{bikeid_col}"::BIGINT AS bikeid,
-                    "{usertype_col}" AS usertype,
-                    CASE WHEN "{birth_year_col}" IS NOT NULL THEN LEFT(CAST("{birth_year_col}" as VARCHAR),4) ELSE NULL END AS birth_year,
-                    "{gender_col}"::BIGINT AS gender
-                FROM read_csv('{csv_file_path}', header=true, types={{'start station id': 'VARCHAR', 'end station id':'VARCHAR', 'end station latitude':'VARCHAR', 'end station longitude':'VARCHAR'}})
-                """
-            else:
-                # Create new table - original logic
-                insert_query = f"""
-                CREATE TABLE "{final_table_name}" AS
-                SELECT
-                    "{start_time_col}"::TIMESTAMP AS starttime,
-                    "{stop_time_col}"::TIMESTAMP AS stoptime,
-                    "{start_station_id_col}"::VARCHAR AS start_station_id,
-                    "{start_station_name_col}" AS start_station_name,
-                    "{start_station_lat_col}"::DOUBLE AS start_station_latitude,
-                    "{start_station_lng_col}"::DOUBLE AS start_station_longitude,
-                    "{end_station_id_col}"::VARCHAR AS end_station_id,
-                    "{end_station_name_col}" AS end_station_name,
-                    NULLIF("{end_station_lat_col}", 'NULL')::DOUBLE AS end_station_latitude,
-                    NULLIF("{end_station_lng_col}", 'NULL')::DOUBLE AS end_station_longitude,
-                    "{bikeid_col}"::BIGINT AS bikeid,
-                    "{usertype_col}" AS usertype,
-                    CASE WHEN "{birth_year_col}" IS NOT NULL THEN LEFT(CAST("{birth_year_col}" as VARCHAR),4) ELSE NULL END AS birth_year,
-                    "{gender_col}"::BIGINT AS gender
-                FROM read_csv('{csv_file_path}', header=true, types={{'start station id': 'VARCHAR', 'end station id':'VARCHAR', 'end station latitude':'VARCHAR', 'end station longitude':'VARCHAR'}})
-                """
+        #Old schema contains bad datetime format
+
+        query_logic = f"""
+        SELECT
+            CASE
+                WHEN "{start_time_col}" LIKE '%-%-%' THEN strptime(NULLIF(TRIM("{start_time_col}"), ''), '%Y-%m-%d %H:%M:%S')
+                WHEN "{start_time_col}" LIKE '%/%/%' THEN strptime(NULLIF(TRIM("{start_time_col}"), ''), '%m/%d/%Y %H:%M:%S')
+                ELSE NULL
+            END AS starttime,
+            CASE
+                WHEN "{stop_time_col}" LIKE '%-%-%' THEN strptime(NULLIF(TRIM("{stop_time_col}"), ''), '%Y-%m-%d %H:%M:%S')
+                WHEN "{stop_time_col}" LIKE '%/%/%' THEN strptime(NULLIF(TRIM("{stop_time_col}"), ''), '%m/%d/%Y %H:%M:%S')
+                ELSE NULL
+            END AS stoptime,
+            "{start_station_id_col}"::VARCHAR AS start_station_id,
+            "{start_station_name_col}" AS start_station_name,
+            "{start_station_lat_col}"::DOUBLE AS start_station_latitude,
+            "{start_station_lng_col}"::DOUBLE AS start_station_longitude,
+            "{end_station_id_col}"::VARCHAR AS end_station_id,
+            "{end_station_name_col}" AS end_station_name,
+            "{end_station_lat_col}"::DOUBLE AS end_station_latitude,
+            "{end_station_lng_col}"::DOUBLE AS end_station_longitude,
+            "{bikeid_col}"::BIGINT AS bikeid,
+            "{usertype_col}" AS usertype,
+            TRY_CAST(LEFT(CAST("{birth_year_col}" as VARCHAR), 4) AS INTEGER) AS birth_year,
+            TRY_CAST("{gender_col}" AS BIGINT) AS gender
+        FROM read_csv('{csv_file_path}',
+                    header=true,
+                    all_varchar=true,
+                    ignore_errors=true)
+        """
+        
+        if table_exists:
+            insert_query = f'INSERT INTO "{final_table_name}" ({query_logic})'
+        else:
+            insert_query = f'CREATE TABLE "{final_table_name}" AS ({query_logic})'  
     else:
         print(f"Unknown schema for file: {filename} (sample columns: {sample_df.columns.tolist()}). Skipping.")
         return
